@@ -12,11 +12,12 @@ import PujaMuhurat from './components/PujaMuhurat';
 import GreetingMaker from './components/GreetingMaker';
 import OrdersTracker from './components/OrdersTracker';
 import { soundFX } from './utils/audio';
+import { fallbackProducts, fallbackEvents } from './data/initialData';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('store');
-  const [products, setProducts] = useState([]);
-  const [events, setEvents] = useState([]);
+  const [products, setProducts] = useState(fallbackProducts);
+  const [events, setEvents] = useState(fallbackEvents);
   const [cartItems, setCartItems] = useState([
     {
       id: "prod-1",
@@ -62,7 +63,7 @@ export default function App() {
       const res = await fetch('/api/products');
       if (res.ok) {
         const data = await res.json();
-        setProducts(data);
+        if (Array.isArray(data) && data.length > 0) setProducts(data);
       }
     } catch (err) {
       console.error('Error loading products:', err);
@@ -74,7 +75,7 @@ export default function App() {
       const res = await fetch('/api/events');
       if (res.ok) {
         const data = await res.json();
-        setEvents(data);
+        if (Array.isArray(data) && data.length > 0) setEvents(data);
       }
     } catch (err) {
       console.error('Error loading events:', err);
