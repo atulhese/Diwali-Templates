@@ -26,43 +26,57 @@ const MIME_TYPES = {
 };
 
 const server = http.createServer((req, res) => {
-  // Normalize URL and remove query strings
-  const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
-  let pathname = parsedUrl.pathname;
-
-  // Sanitize path to prevent directory traversal
-  let safePath = path.normalize(path.join(DIST_DIR, pathname));
-  if (!safePath.startsWith(DIST_DIR)) {
-    res.writeHead(403, { 'Content-Type': 'text/plain' });
-    res.end('Access Denied');
-    return;
-  }
-
-  // Check if file exists, if not fallback to index.html (SPA routing)
-  fs.stat(safePath, (err, stats) => {
-    if (err || !stats.isFile()) {
-      safePath = path.join(DIST_DIR, 'index.html');
+  try {
+    // Health check endpoint for Render load balancers
+    if (req.url === '/health' || req.url === '/_health') {
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end('OK');
+      return;
     }
 
-    const ext = path.extname(safePath).toLowerCase();
+    // Safely extract pathname without query params
+    const rawPath = (req.url || '/').split('?')[0];
+    const decodedPath = decodeURIComponent(rawPath);
+    let filePath = path.join(DIST_DIR, decodedPath === '/' ? 'index.html' : decodedPath);
+
+    // Fallback to index.html if file doesn't exist or is a directory (SPA routing)
+    if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+      filePath = path.join(DIST_DIR, 'index.html');
+    }
+
+    const ext = path.extname(filePath).toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
 
-    fs.readFile(safePath, (readErr, content) => {
-      if (readErr) {
-        res.writeHead(500, { 'Content-Type': 'text/plain' });
-        res.end('Internal Server Error');
-        return;
-      }
-
-      res.writeHead(200, {
-        'Content-Type': contentType,
-        'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=31536000, immutable'
-      });
-      res.end(content);
+    const stream = fs.createReadStream(filePath);
+    stream.on('error', (err) => {
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end('Internal Server Error');
     });
-  });
+
+    res.writeHead(200, {
+      'Content-Type': contentType,
+      'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=31536000, immutable'
+    });
+    stream.pipe(res);
+
+  } catch (err) {
+    console.error('Request error:', err);
+    try {
+      const fallbackPath = path.join(DIST_DIR, 'index.html');
+      if (fs.existsSync(fallbackPath)) {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        fs.createReadStream(fallbackPath).pipe(res);
+      } else {
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('Server Error');
+      }
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end('Fatal Error');
+    }
+  }
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`🪔 Shubh Deepavali Frontend running on port ${PORT}`);
+  console.log(`Frontend running on 0.0.0.0:${PORT}`);
 });
